@@ -15,7 +15,10 @@ Writes : assets/img/sdx-XXXX-600.webp    catalogue cards
 
 Requires Pillow:  pip install pillow
 """
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    raise SystemExit('Pillow is not installed.  Run:  pip install pillow')
 import glob, os, pathlib, sys
 
 ROOT   = pathlib.Path(__file__).parent

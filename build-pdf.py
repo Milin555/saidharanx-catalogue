@@ -14,8 +14,14 @@ rate and minimum order. Run this whenever data.js changes.
 
 Requires Pillow:  pip install pillow
 """
-from PIL import Image, ImageDraw, ImageFont
-import re, pathlib, sys
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    raise SystemExit('Pillow is not installed.  Run:  pip install pillow')
+
+import re
+import pathlib
+import sys
 
 ROOT  = pathlib.Path(__file__).parent
 SRC   = ROOT / 'assets'
@@ -45,18 +51,18 @@ GAP_X, GAP_Y   = 25, 60
 def font(file, size, variation=None):
     path = FONTS / file
     if not path.exists():
-        sys.exit(f'Missing font: {path}\nDownload the four TTFs into assets/fonts/ — see README.')
+        sys.exit(f'Missing font: {path}\n'
+                 f'Download the four TTFs into assets/fonts/ — see README.')
     f = ImageFont.truetype(str(path), size)
     if variation:
         try:
             f.set_variation_by_name(variation)
         except Exception:
-            pass
+            pass                        # static build of the font — size alone is fine
     return f
 
 
 # brand type scale
-DISP     = lambda s: font('PlayfairDisplay.ttf', s, 'Regular')
 DISP_MED = lambda s: font('PlayfairDisplay.ttf', s, 'Medium')
 ITAL     = lambda s: font('PlayfairDisplay-Italic.ttf', s, 'Medium Italic')
 SERIF    = lambda s: font('EBGaramond.ttf', s, 'Regular')
@@ -72,27 +78,116 @@ def inr(n):
     return '₹' + s
 
 
+# ── data.js parsing ────────────────────────────────────────────────
+# Field order and whitespace are deliberately NOT assumed: an editor
+# reformatting data.js (Prettier, IDE auto-format) must never silently
+# drop products from the PDF.
+
+# accepts 'single', "double" or `backtick` quoting
+FIELD_TEXT = r"""{}\s*:\s*(['"`])((?:\\.|(?!\1).)*?)\1"""
+FIELD_NUM  = r"{}\s*:\s*(\d+)"
+
+
+def _text(block, field):
+    m = re.search(FIELD_TEXT.format(field), block)
+    if not m:
+        return ''
+    return m.group(2).replace("\\'", "'").replace('\\"', '"')
+
+
+def _num(block, field):
+    m = re.search(FIELD_NUM.format(field), block)
+    return int(m.group(1)) if m else 0
+
+
+def _objects(body):
+    """Yield each top-level {...} object inside the PRODUCTS array.
+
+    Brace matching rather than splitting on a field name, so a product
+    whose fields have been reordered still parses as one object. String
+    literals are tracked so braces inside them don't affect depth.
+    """
+    start_idx = body.find('[')
+    if start_idx == -1:
+        return
+    depth, start, quote, escaped = 0, None, None, False
+
+    for i in range(start_idx, len(body)):
+        c = body[i]
+        if quote:
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == quote:
+                quote = None
+            continue
+        if c in '\'"`':
+            quote = c
+        elif c == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0 and start is not None:
+                yield body[start:i + 1]
+                start = None
+        elif c == ']' and depth == 0:
+            return
+
+
 def load_products():
-    src = (SRC / 'data.js').read_text(encoding='utf-8')
-    pattern = (r"sku:'(SDX-\d+)', img:'([^']+)', price:(\d+), moq:(\d+), moqUnit:'([^']+)',"
-               r"\s*\n\s*name:'([^']+)',\s*\n\s*desc:'[^']*',"
-               r"\s*\n\s*type:'([^']+)', fabric:'([^']+)', work:'([^']+)'")
-    out = []
-    for m in re.finditer(pattern, src):
-        out.append(dict(sku=m.group(1), img=m.group(2), price=int(m.group(3)),
-                        moq=int(m.group(4)), unit=m.group(5),
-                        name=m.group(6).replace("\\'", "'"),
-                        type=m.group(7), fabric=m.group(8), work=m.group(9)))
-    if not out:
-        sys.exit('Could not parse any products from assets/data.js')
-    return out
+    path = SRC / 'data.js'
+    if not path.exists():
+        sys.exit(f'Missing {path}')
+    src = path.read_text(encoding='utf-8')
+
+    marker = 'const PRODUCTS'
+    if marker not in src:
+        sys.exit(f'{path} does not define `{marker}`.')
+    body = src[src.index(marker):]
+
+    blocks = list(_objects(body))
+    if not blocks:
+        sys.exit(f'No products found in {path} — expected a `const PRODUCTS = [ {{…}} ]` array.')
+
+    products = []
+    for b in blocks:
+        item = {
+            'sku':    _text(b, 'sku'),
+            'img':    _text(b, 'img'),
+            'name':   _text(b, 'name'),
+            'type':   _text(b, 'type'),
+            'fabric': _text(b, 'fabric'),
+            'work':   _text(b, 'work'),
+            'unit':   _text(b, 'moqUnit') or 'pcs',
+            'price':  _num(b, 'price'),
+            'moq':    _num(b, 'moq'),
+        }
+        missing = [k for k in ('sku', 'img', 'name') if not item[k]]
+        if not item['price']:
+            missing.append('price')
+        if missing:
+            print(f"  ! skipped {item['sku'] or '(no sku)'} — missing {', '.join(missing)}")
+            continue
+        if not (SRC / item['img']).exists():
+            print(f"  ! skipped {item['sku']} — photo not found: assets/{item['img']}")
+            continue
+        products.append(item)
+
+    if not products:
+        sys.exit('No usable products in data.js — nothing to build.')
+    return products
 
 
+# ── drawing helpers ────────────────────────────────────────────────
 def centre(d, y, text, f, fill):
     d.text(((W - d.textlength(text, font=f)) / 2, y), text, font=f, fill=fill)
 
 
 def ellipsis(d, text, f, max_w):
+    """Trim text to max_w, appending an ellipsis. `f` is reused, not rebuilt."""
     if d.textlength(text, font=f) <= max_w:
         return text
     while len(text) > 8 and d.textlength(text + '…', font=f) > max_w:
@@ -139,6 +234,11 @@ def product_page(chunk, index, total):
            font=SANS(15), fill=MUTED)
     d.line([(MARGIN_X, 214), (W - MARGIN_X, 214)], fill=LINE, width=1)
 
+    f_sku  = SANS(15)
+    f_name = SERIF(21)
+    f_meta = SANS(15)
+    f_rate = DISP_MED(25)
+
     for j, p in enumerate(chunk):
         col, row = j % COLS, j // COLS
         x = MARGIN_X + col * (CARD_W + GAP_X)
@@ -152,20 +252,20 @@ def product_page(chunk, index, total):
         pg.paste(rs.crop((ox, oy, ox + CARD_W, oy + IMG_H)), (x, y))
 
         ty = y + IMG_H + 14
-        d.text((x, ty), p['sku'], font=SANS(15), fill=GOLD)
-        d.text((x, ty + 22), ellipsis(d, p['name'], SERIF(21), CARD_W), font=SERIF(21), fill=INK)
-        d.text((x, ty + 54), f"{p['fabric']} · {p['work']}", font=SANS(15), fill=MUTED)
+        d.text((x, ty), p['sku'], font=f_sku, fill=GOLD)
+        d.text((x, ty + 22), ellipsis(d, p['name'], f_name, CARD_W), font=f_name, fill=INK)
+        d.text((x, ty + 54), f"{p['fabric']} · {p['work']}", font=f_meta, fill=MUTED)
         d.line([(x, ty + 82), (x + CARD_W, ty + 82)], fill=LINE, width=1)
-        d.text((x, ty + 92), inr(p['price']), font=DISP_MED(25), fill=AUBERGINE)
+        d.text((x, ty + 92), inr(p['price']), font=f_rate, fill=AUBERGINE)
         moq = f"MIN {p['moq']} {p['unit'].upper()}"
-        d.text((x + CARD_W - d.textlength(moq, font=SANS(15)), ty + 100), moq,
-               font=SANS(15), fill=MUTED)
+        d.text((x + CARD_W - d.textlength(moq, font=f_meta), ty + 100), moq,
+               font=f_meta, fill=MUTED)
 
     label = f'{index} of {total}'
     d.line([(MARGIN_X, H - 80), (W - MARGIN_X, H - 80)], fill=LINE, width=1)
-    d.text((MARGIN_X, H - 62), 'Wholesale only. Not a retail store.', font=SANS(15), fill=MUTED)
-    d.text((W - MARGIN_X - d.textlength(label, font=SANS(15)), H - 62), label,
-           font=SANS(15), fill=MUTED)
+    d.text((MARGIN_X, H - 62), 'Wholesale only. Not a retail store.', font=f_meta, fill=MUTED)
+    d.text((W - MARGIN_X - d.textlength(label, font=f_meta), H - 62), label,
+           font=f_meta, fill=MUTED)
     return pg
 
 
