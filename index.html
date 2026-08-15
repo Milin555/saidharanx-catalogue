@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SaiDharaNx — Wholesale Ethnic Wear Manufacturer, Surat</title>
 <meta name="description" content="Manufacturing house in Surat. Women's festive and wedding ethnic wear — suit sets, kurtis, co-ord sets. Wholesale catalogue for trade partners. Rates from ₹490 per piece.">
-<link rel="canonical" href="https://REPLACE-WITH-LIVE-DOMAIN.com/">
+<link rel="canonical" href="https://saidharanx-catalogue.vercel.app/">
 
 <!-- WhatsApp / social preview -->
 <meta property="og:type" content="website">
@@ -14,7 +14,7 @@
 <meta property="og:description" content="Manufacturer of women's festive and wedding ethnic wear. Suit sets, kurtis, co-ord sets. Wholesale only — rates from ₹490 per piece.">
 <!-- ⚠️ og:image MUST be an absolute URL — social crawlers cannot resolve
      a relative path. Replace the host below with the live domain. -->
-<meta property="og:image" content="https://REPLACE-WITH-LIVE-DOMAIN.com/assets/img/og.jpg">
+<meta property="og:image" content="https://saidharanx-catalogue.vercel.app/assets/img/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
@@ -29,7 +29,7 @@
 
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"Organization","name":"SaiDharaNx",
- "url":"https://REPLACE-WITH-LIVE-DOMAIN.com/","logo":"assets/img/logo-96.png",
+ "url":"https://saidharanx-catalogue.vercel.app/","logo":"assets/img/logo-96.png",
  "telephone":"+91-75676-17393",
  "address":{"@type":"PostalAddress","streetAddress":"S.Y No. 33/2, Plot No. 10, 426/A","addressLocality":"Surat","postalCode":"395002","addressRegion":"Gujarat","addressCountry":"IN"},
  "sameAs":["https://www.instagram.com/saidharannx_official"]}
@@ -386,8 +386,14 @@ document.getElementById('leadForm').addEventListener('submit', e => {
 Shop: ${f.shop.value}
 WhatsApp: ${f.phone.value}`;
   document.getElementById('leadOk').textContent =
-    'Opening WhatsApp — press send there to receive the list.';
-  window.open(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+    'Opening WhatsApp in a new tab — press send there to receive the list.';
+  // synthetic click inside the user gesture: popup blockers don't intercept
+  // it, and the catalogue stays open behind the new tab
+  const a = Object.assign(document.createElement('a'), {
+    href: `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`,
+    target: '_blank', rel: 'noopener'
+  });
+  document.body.appendChild(a); a.click(); a.remove();
 });
 </script>
 <!-- Analytics — uncomment and add the client's ID once they have an account.
