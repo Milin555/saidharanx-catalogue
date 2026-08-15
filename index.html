@@ -165,9 +165,9 @@
 <div class="trust">
   <div class="wrap trust__in">
     <div class="trust__i"><div class="trust__n">271K</div><div class="trust__k">Instagram following</div></div>
-    <div class="trust__i"><div class="trust__n">150+</div><div class="trust__k">Trade partners</div></div>
-    <div class="trust__i"><div class="trust__n">₹490</div><div class="trust__k">Rates start from</div></div>
-    <div class="trust__i"><div class="trust__n">Weekly</div><div class="trust__k">New designs</div></div>
+    <div class="trust__i"><div class="trust__n">150+</div><div class="trust__k">Retail partners</div></div>
+    <div class="trust__i"><div class="trust__n">₹490</div><div class="trust__k">Starting lot rate</div></div>
+    <div class="trust__i"><div class="trust__n">50+</div><div class="trust__k">Weekly new arrivals</div></div>
   </div>
 </div>
 
@@ -387,7 +387,7 @@ Shop: ${f.shop.value}
 WhatsApp: ${f.phone.value}`;
   document.getElementById('leadOk').textContent =
     'Opening WhatsApp — press send there to receive the list.';
-  location.href = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`;
+  window.open(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
 });
 </script>
 <!-- Analytics — uncomment and add the client's ID once they have an account.
